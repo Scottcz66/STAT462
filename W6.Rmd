@@ -1,0 +1,1142 @@
+---
+title: "w6"
+output: html_document
+date: "2026-03-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+#install.packages("FNN")
+library(FNN)
+library(pROC)
+library(caret)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##Q1 Does availability_365 have an effect on Airbnb listing price?
+
+
+```{r pressure, echo=FALSE}
+#simple linear regression
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(FNN)
+
+df <- read.csv("listings.csv", stringsAsFactors = FALSE)
+
+df_clean <- df %>%
+  dplyr::select(-dplyr::last_col()) %>%
+  tidyr::drop_na()
+
+
+df_availa <- df_clean %>%
+  select(price, availability_365) %>%
+  filter(!is.na(price), !is.na(availability_365))
+
+
+df <- df_availa %>%
+  mutate(log_price = log(price + 1))
+
+ggplot(df, aes(x = availability_365, y = log_price)) +
+  geom_point(color = "black", alpha = 0.3) +
+  labs(
+    title = "Scatter plot of log(price + 1) vs availability_365",
+    x = "availability_365",
+    y = "log(price + 1)"
+  )
+
+
+
+
+```
+
+#train and test
+```{r}
+df_vis <- df_clean %>%
+  select(price, availability_365, number_of_reviews, reviews_per_month, room_type)
+summary(df_vis)
+
+
+#boxplot
+ggplot(df_vis, aes(y = availability_365)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(
+    title = "Boxplot of availability_365",
+    y = "availability_365"
+  )
+ggplot(df_vis, aes(y = number_of_reviews)) +
+  geom_boxplot(fill = "darkgreen") +
+  labs(
+    title = "Boxplot of number_of_reviews",
+    y = "number_of_reviews"
+  )
+
+
+ggpairs(df_vis)
+
+
+```
+
+
+先观察数据集的变量,然后做可视化,最后做ggpairs看变量的相关性,发现numbers_of_review和reviews_per_month高度相关,然后做线性回归模型.  其他的做muti线性回归和分类模型
+
+
+#@train and test 
+```{r}
+set.seed(1)
+
+train_index <- sample(1:nrow(df_q1), size = 0.8 * nrow(df_q1))
+
+train_data <- df_q1[train_index, ]
+test_data  <- df_q1[-train_index, ]
+```
+
+
+
+
+
+#simple linear model, # Question 1  which means that availability_365 alone explains only a small proportion of the variation in log_price.
+```{r}
+df_q1 <- df_clean %>%
+  select(price, availability_365) %>%
+  filter(!is.na(price), !is.na(availability_365)) %>%
+  mutate(log_price = log(price + 1))
+
+set.seed(42)
+
+train_index_q1 <- sample(1:nrow(df_q1), size = 0.8 * nrow(df_q1))
+
+train_data <- df_q1[train_index_q1, ]
+test_data  <- df_q1[-train_index_q1, ]
+
+slr_q1 <- lm(log_price ~ availability_365, data = train_data)
+
+summary(slr_q1)
+
+ggplot(train_data, aes(x = availability_365, y = log_price)) +
+  geom_point(color = "black", alpha = 0.3) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(
+    title = "Train set: log(price + 1) vs availability_365",
+    x = "availability_365",
+    y = "log(price + 1)"
+  )
+
+pred_q1 <- predict(slr_q1, newdata = test_data)
+
+head(pred_q1)
+
+mse_q1 <- mean((test_data$log_price - pred_q1)^2)
+rmse_q1 <- sqrt(mse_q1)
+
+mse_q1
+rmse_q1
+
+ggplot(data.frame(actual = test_data$log_price, predicted = pred_q1),
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.3) +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  labs(
+    title = "Test set: Actual vs Predicted log(price + 1)",
+    x = "Actual log(price + 1)",
+    y = "Predicted log(price + 1)"
+  )
+
+par(mfrow = c(2, 2))
+plot(slr_q1)
+```
+
+
+
+
+#number of reviews and reviews_per_month
+```{r}
+df_q2 <- df_clean %>%
+  select(number_of_reviews, reviews_per_month) %>%
+  filter(!is.na(number_of_reviews), !is.na(reviews_per_month))
+
+set.seed(42)
+
+data_for_split <- df_q2
+
+train_index <- sample(1:nrow(data_for_split), size = 0.8 * nrow(data_for_split))
+
+train_data <- data_for_split[train_index, ]
+test_data  <- data_for_split[-train_index, ]
+
+slr_q2 <- lm(number_of_reviews ~ reviews_per_month, data = train_data)
+
+summary(slr_q2)
+
+ggplot(train_data, aes(x = reviews_per_month, y = number_of_reviews)) +
+  geom_point(color = "black", alpha = 0.3) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(
+    title = "Train set: number_of_reviews vs reviews_per_month",
+    x = "reviews_per_month",
+    y = "number_of_reviews"
+  )
+pred_q2 <- predict(slr_q2, newdata = test_data)
+
+head(pred_q2)
+
+mse_q2 <- mean((test_data$number_of_reviews - pred_q2)^2)
+rmse_q2 <- sqrt(mse_q2)
+
+mse_q2
+rmse_q2
+
+ggplot(data.frame(actual = test_data$number_of_reviews, predicted = pred_q2),
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.3) +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  labs(
+    title = "Test set: Actual vs Predicted number_of_reviews",
+    x = "Actual number_of_reviews",
+    y = "Predicted number_of_reviews"
+  )
+par(mfrow = c(2, 2))
+plot(slr_q2)
+
+```
+
+#add KNN to Q2, compare KNN with sLR
+```{r}
+set.seed(42)
+
+n <- nrow(df_q2)
+
+train_index <- sample(1:n, size = 0.8 * n)
+remaining_index <- setdiff(1:n, train_index)
+val_index <- sample(remaining_index, size = 0.1 * n)
+test_index <- setdiff(1:n, c(train_index, val_index))
+
+train_data <- df_q2[train_index, ]
+val_data   <- df_q2[val_index, ]
+test_data  <- df_q2[test_index, ]
+
+k_values <- c(1, 3, 5, 10, 20, 30, 50, 75, 100)
+val_mse <- numeric(length(k_values))
+
+for (i in seq_along(k_values)) {
+  k <- k_values[i]
+  
+  knn_pred_val <- knn.reg(
+    train = data.frame(reviews_per_month = train_data$reviews_per_month),
+    test  = data.frame(reviews_per_month = val_data$reviews_per_month),
+    y     = train_data$number_of_reviews,
+    k     = k
+  )$pred
+  
+  val_mse[i] <- mean((val_data$number_of_reviews - knn_pred_val)^2)
+}
+
+data.frame(k = k_values, validation_MSE = val_mse)
+
+best_k <- k_values[which.min(val_mse)]
+best_k
+ggplot(data.frame(k = k_values, validation_MSE = val_mse),
+       aes(x = k, y = validation_MSE)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Validation MSE for different k values",
+    x = "k",
+    y = "Validation MSE"
+  )
+
+train_val_data <- rbind(train_data, val_data)
+
+knn_pred_test <- knn.reg(
+  train = data.frame(reviews_per_month = train_val_data$reviews_per_month),
+  test  = data.frame(reviews_per_month = test_data$reviews_per_month),
+  y     = train_val_data$number_of_reviews,
+  k     = best_k
+)$pred
+
+mse_knn_q2 <- mean((test_data$number_of_reviews - knn_pred_test)^2)
+rmse_knn_q2 <- sqrt(mse_knn_q2)
+
+mse_knn_q2
+rmse_knn_q2
+
+ggplot(data.frame(actual = test_data$number_of_reviews, predicted = knn_pred_test),
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.3) +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  labs(
+    title = paste("KNN Test set: Actual vs Predicted number_of_reviews (k =", best_k, ")"),
+    x = "Actual number_of_reviews",
+    y = "Predicted number_of_reviews"
+  )
+
+x_grid <- seq(min(train_data$reviews_per_month),
+              max(train_data$reviews_per_month),
+              length.out = 200)
+
+# SLR predictions
+slr_line <- predict(slr_q2, newdata = data.frame(reviews_per_month = x_grid))
+
+# KNN predictions
+knn_line <- knn.reg(
+  train = data.frame(reviews_per_month = train_val_data$reviews_per_month),
+  test  = data.frame(reviews_per_month = x_grid),
+  y     = train_val_data$number_of_reviews,
+  k     = best_k
+)$pred
+
+plot_data <- data.frame(
+  reviews_per_month = x_grid,
+  slr_pred = slr_line,
+  knn_pred = knn_line
+)
+
+ggplot(train_data, aes(x = reviews_per_month, y = number_of_reviews)) +
+  geom_point(alpha = 0.2, color = "black") +
+  geom_line(data = plot_data, aes(x = reviews_per_month, y = slr_pred),
+            color = "purple", linewidth = 1) +
+  geom_line(data = plot_data, aes(x = reviews_per_month, y = knn_pred),
+            color = "red", linewidth = 1) +
+  labs(
+    title = "Simple Linear Regression vs KNN Regression",
+    x = "reviews_per_month",
+    y = "number_of_reviews"
+  )
+```
+
+
+
+#MLR  same Q1 and Q2 but more vars
+```{r}
+df_mlr_q1 <- df_clean %>%
+  select(price, availability_365, minimum_nights, number_of_reviews,
+         reviews_per_month, calculated_host_listings_count, room_type) %>%
+  mutate(log_price = log(price + 1))
+
+set.seed(42)
+
+data_for_split <- df_mlr_q1
+
+train_index <- sample(1:nrow(data_for_split), size = 0.8 * nrow(data_for_split))
+
+train_data <- data_for_split[train_index, ]
+test_data  <- data_for_split[-train_index, ]
+
+mlr_q1 <- lm(log_price ~ availability_365 + minimum_nights + number_of_reviews +
+               reviews_per_month + calculated_host_listings_count + room_type,
+             data = train_data)
+
+summary(mlr_q1)
+
+#test set
+pred_mlr_q1 <- predict(mlr_q1, newdata = test_data)
+
+head(pred_mlr_q1)
+
+
+#MSE
+mse_mlr_q1 <- mean((test_data$log_price - pred_mlr_q1)^2)
+rmse_mlr_q1 <- sqrt(mse_mlr_q1)
+
+mse_mlr_q1
+rmse_mlr_q1
+
+#test vs. train
+ggplot(data.frame(actual = test_data$log_price, predicted = pred_mlr_q1),
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.3) +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  labs(
+    title = "MLR Test set: Actual vs Predicted log(price + 1)",
+    x = "Actual log(price + 1)",
+    y = "Predicted log(price + 1)"
+  )
+
+
+comparison_price <- data.frame(
+  Model = c("Simple Linear Regression", "Multiple Linear Regression"),
+  MSE = c(mse_q1, mse_mlr_q1),
+  RMSE = c(rmse_q1, rmse_mlr_q1)
+)
+
+comparison_price
+```
+
+
+
+
+#Q2 add some new features on train dataset   Q2
+```{r}
+
+#Nothing has been changed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+df_mlr_q2 <- df_clean %>%
+  select(number_of_reviews, reviews_per_month, availability_365,
+         minimum_nights, calculated_host_listings_count, room_type)
+
+set.seed(42)
+
+data_for_split <- df_mlr_q2
+
+train_index <- sample(1:nrow(data_for_split), size = 0.8 * nrow(data_for_split))
+
+train_data <- data_for_split[train_index, ]
+test_data  <- data_for_split[-train_index, ]
+
+mlr_q2 <- lm(number_of_reviews ~ reviews_per_month + availability_365 +
+               minimum_nights + calculated_host_listings_count + room_type,
+             data = train_data)
+
+summary(mlr_q2)
+
+pred_mlr_q2 <- predict(mlr_q2, newdata = test_data)
+
+head(pred_mlr_q2)
+
+mse_mlr_q2 <- mean((test_data$number_of_reviews - pred_mlr_q2)^2)
+rmse_mlr_q2 <- sqrt(mse_mlr_q2)
+
+mse_mlr_q2
+rmse_mlr_q2
+
+ggplot(data.frame(actual = test_data$number_of_reviews, predicted = pred_mlr_q2),
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.3) +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  labs(
+    title = "MLR Test set: Actual vs Predicted number_of_reviews",
+    x = "Actual number_of_reviews",
+    y = "Predicted number_of_reviews"
+  )
+
+comparison_reviews <- data.frame(
+  Model = c("Simple Linear Regression", "Multiple Linear Regression"),
+  MSE = c(mse_q2, mse_mlr_q2),
+  RMSE = c(rmse_q2, rmse_mlr_q2)
+)
+
+comparison_reviews
+
+```
+
+
+
+
+#Logistic regression (simple) log(price)   Q1
+```{r}
+
+df_logistic_q1 <- df_clean %>%
+  select(price, availability_365, minimum_nights, number_of_reviews, 
+         reviews_per_month, calculated_host_listings_count, room_type) %>%
+  mutate(high_price = ifelse(price >= median(price), 1, 0)) 
+
+set.seed(42)
+
+train_index <- sample(1:nrow(df_logistic_q1), size = 0.8 * nrow(df_logistic_q1))
+train_data <- df_logistic_q1[train_index, ]
+test_data  <- df_logistic_q1[-train_index, ]
+
+slr_q1 <- glm(high_price ~ availability_365, data = train_data, family = binomial)
+summary(slr_q1)
+
+
+
+pred_prob <- predict(logreg.fit, newdata = test_data, type = "response")
+pred_class <- ifelse(pred_prob > 0.5, 1, 0)
+table(Predicted = pred_class, Actual = test_data$high_price)
+
+accuracy <- mean(pred_class == test_data$high_price)
+paste("Accuracy:", round(accuracy,4))
+
+
+pred_q1_prob <- predict(slr_q1, newdata = test_data, type = "response")
+roc_q1 <- roc(test_data$high_price, pred_q1_prob)
+auc(roc_q1)
+
+plot(roc_q1, col = "blue", main = "ROC Curve for Logistic Regression")
+
+
+#============================
+  
+
+
+```
+
+
+
+
+
+#Q1 muti 
+```{r}
+
+slr_q2 <- glm(high_price ~ availability_365 + minimum_nights + number_of_reviews + reviews_per_month + room_type + calculated_host_listings_count, data = train_data, family = binomial)
+summary(slr_q2)
+
+
+pred_prob2 <- predict(slr_q2, newdata = test_data, type = "response")
+pred_class2 <- ifelse(pred_prob2 >= 0.5, 1, 0)
+
+confusionMatrix(as.factor(pred_class2), as.factor(test_data$high_price),positive = "1")
+pred_q1_prob <- predict(slr_q2, newdata = test_data, type = "response")
+roc_q2 <- roc(test_data$high_price, pred_q1_prob)
+auc(roc_q2)
+plot(roc_q2, col = "blue", main = "ROC Curve for Logistic Regression")
+```
+
+
+
+
+#Q2 reviews
+```{r}
+df_logistic_q1 <- df_clean %>%
+  select(number_of_reviews, reviews_per_month, availability_365,
+          minimum_nights, calculated_host_listings_count, room_type) %>%
+  mutate(high_reviews = ifelse(number_of_reviews >= median(number_of_reviews), 1, 0)) 
+
+set.seed(42)
+
+train_index <- sample(1:nrow(df_logistic_q1), size = 0.8 * nrow(df_logistic_q1))
+train_data <- df_logistic_q1[train_index, ]
+test_data  <- df_logistic_q1[-train_index, ]
+
+slr_q3 <- glm(high_reviews ~ reviews_per_month, data = train_data, family = binomial)
+summary(slr_q1)
+
+
+
+pred_prob <- predict(slr_q3, newdata = test_data, type = "response")
+pred_class <- ifelse(pred_prob > 0.5, 1, 0)
+table(Predicted = pred_class, Actual = test_data$high_reviews)
+
+accuracy <- mean(pred_class == test_data$high_reviews)
+paste("Accuracy:", round(accuracy,4))
+
+
+pred_q1_prob <- predict(slr_q3, newdata = test_data, type = "response")
+roc_q1 <- roc(test_data$high_reviews, pred_q1_prob)
+auc(roc_q1)
+
+plot(roc_q1, col = "blue", main = "ROC Curve for Logistic Regression")
+```
+
+
+
+
+
+=============================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r pressure, echo=FALSE}
+#simple linear regression
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+
+
+df <- read.csv("listings.csv", stringsAsFactors = FALSE)
+
+df_clean <- df %>%
+  dplyr::select(-dplyr::last_col()) %>%
+  tidyr::drop_na()
+
+
+df_availa <- df_clean %>%
+  select(price, calculated_host_listings_count) %>%
+  filter(!is.na(price), !is.na(calculated_host_listings_count))
+
+
+df <- df_availa %>%
+  mutate(log_price = log(price + 1))
+
+ggplot(data = df, aes(x = calculated_host_listings_count, y = log_price)) +
+  geom_point(color = "black", alpha = 0.3) +
+  labs(
+    title = "Scatter plot of log(price + 1) vs calculated_host_listings_count",
+    x = "calculated_host_listings_count",
+    y = "log(price + 1)"
+  )
+
+
+```
+
+
+
+
+
+```{r}
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(pROC)
+
+df <- read.csv("listings.csv", stringsAsFactors = FALSE)
+
+# Clean data
+df_model <- df %>%
+  select(-license) %>%
+  drop_na(price, room_type, neighbourhood_group, latitude, longitude,
+          minimum_nights, number_of_reviews, reviews_per_month,
+          calculated_host_listings_count, availability_365, number_of_reviews_ltm) %>%
+  mutate(
+    log_price = log(price + 1),
+    high_price = ifelse(price >= median(price), 1, 0)
+  )
+
+# -----------------------------
+# 1. EDA
+# -----------------------------
+ggplot(df_model, aes(x = price)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") +
+  xlim(0, 1000) +
+  labs(title = "Distribution of price", x = "Price", y = "Count")
+
+ggplot(df_model, aes(x = log_price)) +
+  geom_histogram(bins = 50, fill = "darkgreen", color = "white") +
+  labs(title = "Distribution of log(price + 1)", x = "log(price + 1)", y = "Count")
+
+ggplot(df_model, aes(x = availability_365, y = price)) +
+  geom_point(alpha = 0.3) +
+  ylim(0, 1000) +
+  labs(title = "Price vs availability_365", x = "availability_365", y = "price")
+
+ggplot(df_model, aes(x = availability_365, y = log_price)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "log(price + 1) vs availability_365", x = "availability_365", y = "log(price + 1)")
+
+ggplot(df_model, aes(x = room_type, y = log_price)) +
+  geom_boxplot() +
+  labs(title = "log(price + 1) by room type", x = "Room type", y = "log(price + 1)")
+
+ggplot(df_model, aes(x = neighbourhood_group, y = log_price)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "log(price + 1) by neighbourhood group", x = "Neighbourhood group", y = "log(price + 1)")
+
+# -----------------------------
+# 2. Simple Linear Regression
+# -----------------------------
+slr_fit1 <- lm(log_price ~ availability_365, data = df_model)
+summary(slr_fit1)
+
+slr_fit2 <- lm(log_price ~ number_of_reviews, data = df_model)
+summary(slr_fit2)
+
+slr_fit3 <- lm(log_price ~ reviews_per_month, data = df_model)
+summary(slr_fit3)
+
+par(mfrow = c(2,2))
+plot(slr_fit1)
+
+# -----------------------------
+# 3. Train-test split
+# -----------------------------
+set.seed(1)
+train_ind <- sample(1:nrow(df_model), size = 0.8 * nrow(df_model))
+
+df_train <- df_model[train_ind, ]
+df_test  <- df_model[-train_ind, ]
+
+# -----------------------------
+# 4. Multiple Linear Regression
+# -----------------------------
+mlr_fit <- lm(
+  log_price ~ room_type + neighbourhood_group + latitude + longitude +
+    minimum_nights + number_of_reviews + reviews_per_month +
+    calculated_host_listings_count + availability_365 + number_of_reviews_ltm,
+  data = df_train
+)
+
+summary(mlr_fit)
+
+pred_mlr <- predict(mlr_fit, newdata = df_test)
+mse_mlr <- mean((df_test$log_price - pred_mlr)^2)
+rmse_mlr <- sqrt(mse_mlr)
+
+mse_mlr
+rmse_mlr
+
+# -----------------------------
+# 5. Simple Logistic Regression
+# -----------------------------
+logit_fit1 <- glm(high_price ~ availability_365, data = df_train, family = binomial)
+summary(logit_fit1)
+
+logit_fit_room <- glm(high_price ~ room_type, data = df_train, family = binomial)
+summary(logit_fit_room)
+
+# -----------------------------
+# 6. Multiple Logistic Regression
+# -----------------------------
+logit_fit2 <- glm(
+  high_price ~ room_type + neighbourhood_group + latitude + longitude +
+    minimum_nights + number_of_reviews + reviews_per_month +
+    calculated_host_listings_count + availability_365 + number_of_reviews_ltm,
+  data = df_train,
+  family = binomial
+)
+
+summary(logit_fit2)
+
+pred_prob <- predict(logit_fit2, newdata = df_test, type = "response")
+pred_class <- ifelse(pred_prob >= 0.5, 1, 0)
+
+table(Predicted = pred_class, Actual = df_test$high_price)
+
+confusionMatrix(as.factor(pred_class), as.factor(df_test$high_price), positive = "1")
+
+roc_obj <- roc(df_test$high_price, pred_prob)
+auc(roc_obj)
+
+plot(roc_obj, col = "blue", main = "ROC Curve for Logistic Regression")
+
+```
+
+
+
+
+
+
+
+```{r}
+############################################################
+# STAT462 - listings.csv
+# Simple Linear Regression
+# Multiple Linear Regression
+# Logistic Regression
+# Binary Tree Classification
+# Split: 80% train / 10% validation / 10% test
+############################################################
+
+# =========================
+# 1. Load packages
+# =========================
+library(tidyverse)
+library(caret)
+library(pROC)
+library(rpart)
+library(rpart.plot)
+
+# =========================
+# 2. Read data
+# =========================
+listings <- read.csv("listings.csv", stringsAsFactors = FALSE)
+
+# Check structure
+str(listings)
+summary(listings)
+
+# =========================
+# 3. Basic data cleaning
+# =========================
+# Keep variables that are useful for modelling
+df <- listings %>%
+  select(
+    price,
+    neighbourhood_group,
+    room_type,
+    latitude,
+    longitude,
+    minimum_nights,
+    number_of_reviews,
+    reviews_per_month,
+    calculated_host_listings_count,
+    availability_365,
+    number_of_reviews_ltm
+  )
+
+# Convert types
+df <- df %>%
+  mutate(
+    price = as.numeric(price),
+    neighbourhood_group = as.factor(neighbourhood_group),
+    room_type = as.factor(room_type)
+  )
+
+# Remove rows with missing price
+df <- df %>% filter(!is.na(price))
+
+# Simple imputation for numeric variables
+df$reviews_per_month[is.na(df$reviews_per_month)] <- median(df$reviews_per_month, na.rm = TRUE)
+
+# Log-transform price for regression
+df <- df %>%
+  mutate(log_price = log(price + 1))
+
+# Create binary target for classification:
+# 1 = high price, 0 = low price
+price_cutoff <- median(df$price, na.rm = TRUE)
+
+df <- df %>%
+  mutate(price_high = ifelse(price >= price_cutoff, 1, 0),
+         price_high = as.factor(price_high))
+
+# Check
+summary(df)
+
+# =========================
+# 4. Train / Validation / Test split
+# =========================
+set.seed(462)
+
+# First split: 80% train, 20% temp
+train_index <- sample(1:nrow(df), size = 0.8 * nrow(df))
+
+df_train <- df[train_index, ]
+df_temp  <- df[-train_index, ]
+
+# Second split temp into 10% validation + 10% test
+set.seed(462)
+valid_index <- sample(1:nrow(df_temp), size = 0.5 * nrow(df_temp))
+
+df_valid <- df_temp[valid_index, ]
+df_test  <- df_temp[-valid_index, ]
+
+cat("Train size:", nrow(df_train), "\n")
+cat("Validation size:", nrow(df_valid), "\n")
+cat("Test size:", nrow(df_test), "\n")
+
+# ============================================================
+# PART A: SIMPLE LINEAR REGRESSION
+# Predict log_price using one predictor
+# ============================================================
+
+# A simple model with one predictor
+slr.fit <- lm(log_price ~ reviews_per_month, data = df_train)
+summary(slr.fit)
+
+# Predict on validation
+slr.valid.pred <- predict(slr.fit, newdata = df_valid)
+slr.valid.r2 <- cor(df_valid$log_price, slr.valid.pred)^2
+slr.valid.rmse <- sqrt(mean((df_valid$log_price - slr.valid.pred)^2))
+
+cat("\n--- Simple Linear Regression (Validation) ---\n")
+cat("Validation R-squared:", round(slr.valid.r2, 4), "\n")
+cat("Validation RMSE:", round(slr.valid.rmse, 4), "\n")
+
+# Predict on test
+slr.test.pred <- predict(slr.fit, newdata = df_test)
+slr.test.r2 <- cor(df_test$log_price, slr.test.pred)^2
+slr.test.rmse <- sqrt(mean((df_test$log_price - slr.test.pred)^2))
+
+cat("\n--- Simple Linear Regression (Test) ---\n")
+cat("Test R-squared:", round(slr.test.r2, 4), "\n")
+cat("Test RMSE:", round(slr.test.rmse, 4), "\n")
+
+# Plot
+plot(df_train$reviews_per_month, df_train$log_price,
+     main = "Simple Linear Regression: log_price ~ reviews_per_month",
+     xlab = "reviews_per_month", ylab = "log_price")
+abline(slr.fit, col = "red", lwd = 2)
+
+
+# ============================================================
+# PART B: MULTIPLE LINEAR REGRESSION
+# Predict log_price using multiple predictors
+# ============================================================
+
+mlr.fit <- lm(
+  log_price ~ neighbourhood_group + room_type + latitude + longitude +
+    minimum_nights + number_of_reviews + reviews_per_month +
+    calculated_host_listings_count + availability_365 + number_of_reviews_ltm,
+  data = df_train
+)
+
+summary(mlr.fit)
+
+# Validation
+mlr.valid.pred <- predict(mlr.fit, newdata = df_valid)
+mlr.valid.r2 <- cor(df_valid$log_price, mlr.valid.pred)^2
+mlr.valid.rmse <- sqrt(mean((df_valid$log_price - mlr.valid.pred)^2))
+
+cat("\n--- Multiple Linear Regression (Validation) ---\n")
+cat("Validation R-squared:", round(mlr.valid.r2, 4), "\n")
+cat("Validation RMSE:", round(mlr.valid.rmse, 4), "\n")
+
+# Test
+mlr.test.pred <- predict(mlr.fit, newdata = df_test)
+mlr.test.r2 <- cor(df_test$log_price, mlr.test.pred)^2
+mlr.test.rmse <- sqrt(mean((df_test$log_price - mlr.test.pred)^2))
+
+cat("\n--- Multiple Linear Regression (Test) ---\n")
+cat("Test R-squared:", round(mlr.test.r2, 4), "\n")
+cat("Test RMSE:", round(mlr.test.rmse, 4), "\n")
+
+
+# ============================================================
+# PART C: LOGISTIC REGRESSION
+# Predict price_high (high price vs low price)
+# ============================================================
+
+logit.fit <- glm(
+  price_high ~ neighbourhood_group + room_type + latitude + longitude +
+    minimum_nights + number_of_reviews + reviews_per_month +
+    calculated_host_listings_count + availability_365 + number_of_reviews_ltm,
+  data = df_train,
+  family = binomial
+)
+
+summary(logit.fit)
+
+# Validation probabilities
+logit.valid.prob <- predict(logit.fit, newdata = df_valid, type = "response")
+logit.valid.class <- ifelse(logit.valid.prob >= 0.5, 1, 0)
+
+# Confusion matrix
+cat("\n--- Logistic Regression (Validation Confusion Matrix) ---\n")
+confusionMatrix(
+  as.factor(logit.valid.class),
+  df_valid$price_high,
+  positive = "1"
+)
+
+# Validation AUC
+logit.valid.roc <- roc(as.numeric(as.character(df_valid$price_high)), logit.valid.prob)
+logit.valid.auc <- auc(logit.valid.roc)
+
+cat("\n--- Logistic Regression (Validation) ---\n")
+cat("Validation AUC:", round(logit.valid.auc, 4), "\n")
+
+plot(logit.valid.roc, col = "blue",
+     main = paste("Validation ROC - Logistic Regression (AUC =", round(logit.valid.auc, 4), ")"))
+
+# Test probabilities
+logit.test.prob <- predict(logit.fit, newdata = df_test, type = "response")
+logit.test.class <- ifelse(logit.test.prob >= 0.5, 1, 0)
+
+cat("\n--- Logistic Regression (Test Confusion Matrix) ---\n")
+confusionMatrix(
+  as.factor(logit.test.class),
+  df_test$price_high,
+  positive = "1"
+)
+
+logit.test.roc <- roc(as.numeric(as.character(df_test$price_high)), logit.test.prob)
+logit.test.auc <- auc(logit.test.roc)
+
+cat("\n--- Logistic Regression (Test) ---\n")
+cat("Test AUC:", round(logit.test.auc, 4), "\n")
+
+
+# ============================================================
+# PART D: BINARY TREE CLASSIFICATION
+# Predict price_high using classification tree
+# ============================================================
+
+tree.fit <- rpart(
+  price_high ~ neighbourhood_group + room_type +
+    minimum_nights + number_of_reviews + reviews_per_month +
+    calculated_host_listings_count + availability_365 + number_of_reviews_ltm,
+  data = df_train,
+  method = "class",
+  control = rpart.control(maxdepth = 5, minsplit = 100, cp = 0.001)
+)
+
+printcp(tree.fit)
+plotcp(tree.fit)
+
+# Visualise tree
+rpart.plot(tree.fit, type = 2, extra = 104, fallen.leaves = TRUE)
+
+# Validation probabilities
+tree.valid.prob <- predict(tree.fit, newdata = df_valid, type = "prob")[, 2]
+tree.valid.class <- ifelse(tree.valid.prob >= 0.5, 1, 0)
+
+cat("\n--- Binary Tree (Validation Confusion Matrix) ---\n")
+confusionMatrix(
+  as.factor(tree.valid.class),
+  df_valid$price_high,
+  positive = "1"
+)
+
+tree.valid.roc <- roc(as.numeric(as.character(df_valid$price_high)), tree.valid.prob)
+tree.valid.auc <- auc(tree.valid.roc)
+
+cat("\n--- Binary Tree (Validation) ---\n")
+cat("Validation AUC:", round(tree.valid.auc, 4), "\n")
+
+plot(tree.valid.roc, col = "darkgreen",
+     main = paste("Validation ROC - Binary Tree (AUC =", round(tree.valid.auc, 4), ")"))
+
+# Test probabilities
+tree.test.prob <- predict(tree.fit, newdata = df_test, type = "prob")[, 2]
+tree.test.class <- ifelse(tree.test.prob >= 0.5, 1, 0)
+
+cat("\n--- Binary Tree (Test Confusion Matrix) ---\n")
+confusionMatrix(
+  as.factor(tree.test.class),
+  df_test$price_high,
+  positive = "1"
+)
+
+tree.test.roc <- roc(as.numeric(as.character(df_test$price_high)), tree.test.prob)
+tree.test.auc <- auc(tree.test.roc)
+
+cat("\n--- Binary Tree (Test) ---\n")
+cat("Test AUC:", round(tree.test.auc, 4), "\n")
+
+
+# ============================================================
+# PART E: Final summary table
+# ============================================================
+
+results <- data.frame(
+  Model = c("Simple Linear Regression",
+            "Multiple Linear Regression",
+            "Logistic Regression",
+            "Binary Tree"),
+  Validation_Metric = c(round(slr.valid.r2, 4),
+                        round(mlr.valid.r2, 4),
+                        round(as.numeric(logit.valid.auc), 4),
+                        round(as.numeric(tree.valid.auc), 4)),
+  Test_Metric = c(round(slr.test.r2, 4),
+                  round(mlr.test.r2, 4),
+                  round(as.numeric(logit.test.auc), 4),
+                  round(as.numeric(tree.test.auc), 4))
+)
+
+print(results)
+
+
+
+```
