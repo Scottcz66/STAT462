@@ -47,36 +47,28 @@ head(data, 5)
 ```
 
 
-
+#vis and prepare everything
 ```{r}
-
 data <- na.omit(data)
-
-# Check dimensions after removing missing values
 dim(data)
 
-########################
-# 3. Keep useful variables and basic cleaning
-########################
-# Convert gender to factor
-data$gender <- as.factor(data$gender)
 
-# Create a binary variable for logistic regression later
-# This is only for the optional classification extension,
-# not the main regression question.
+#Keep useful variables and basic cleaning
+#Convert gender to factor
+data$gender <- as.factor(data$gender)
 data$high_productivity <- ifelse(
   data$productivity_score > median(data$productivity_score),
   "High", "Low"
 )
 data$high_productivity <- factor(data$high_productivity, levels = c("Low", "High"))
 
-########################
-# 4. Research question setup
-########################
-# Main response variable
+
+#Research question setup
+
+#Main response variable
 y_var <- "productivity_score"
 
-# Main predictor for the core question
+#Main predictor for the core question
 x_var <- "study_hours_per_day"
 
 # Additional predictors for multiple regression
@@ -290,26 +282,30 @@ data %>%
     stress_level
   ) %>%
   ggpairs()
+```
 
-############################################################
-# PART B. SIMPLE LINEAR REGRESSION
-############################################################
 
-########################
-# B1. Fit simple linear regression
-########################
+
+
+
+#modelling
+```{r}
+
+#SIMPLE LINEAR REGRESSION
+
+#Fit simple linear regression
 slr_model <- lm(productivity_score ~ study_hours_per_day, data = df_train)
 
 summary(slr_model)
 
-########################
-# B2. Predictions on test set
-########################
+
+#Predictions on test set
+
 slr_pred <- predict(slr_model, newdata = df_test)
 
-########################
-# B3. Evaluate SLR
-########################
+
+#Evaluate SLR
+
 slr_mse  <- mean((df_test$productivity_score - slr_pred)^2)
 slr_rmse <- sqrt(slr_mse)
 slr_r2_train <- summary(slr_model)$r.squared
@@ -318,9 +314,9 @@ slr_mse
 slr_rmse
 slr_r2_train
 
-########################
-# B4. Actual vs predicted plot
-########################
+
+#Actual vs predicted plot
+
 ggplot(data.frame(actual = df_test$productivity_score, predicted = slr_pred),
        aes(x = actual, y = predicted)) +
   geom_point(alpha = 0.4, color = "purple") +
@@ -376,9 +372,9 @@ mlr_rmse
 mlr_r2_train
 mlr_adj_r2_train
 
-########################
-# C4. Actual vs predicted plot
-########################
+
+#Actual vs predicted plot
+
 ggplot(data.frame(actual = df_test$productivity_score, predicted = mlr_pred),
        aes(x = actual, y = predicted)) +
   geom_point(alpha = 0.4, color = "darkgreen") +
@@ -390,23 +386,20 @@ ggplot(data.frame(actual = df_test$productivity_score, predicted = mlr_pred),
   ) +
   theme_minimal()
 
-########################
-# C5. Diagnostic plots
-########################
+
+#Diagnostic plots
+
 par(mfrow = c(2, 2))
 plot(mlr_model)
 par(mfrow = c(1, 1))
 
-############################################################
-# PART D. KNN REGRESSION
-############################################################
-# IMPORTANT:
-# Since productivity_score is continuous, we use KNN REGRESSION.
-# Do NOT use confusionMatrix() here.
 
-########################
-# D1. Select predictors for KNN
-########################
+#KNN REGRESSION
+
+
+
+#Select predictors for KNN
+
 knn_train_x <- df_train %>%
   select(
     study_hours_per_day,
@@ -430,17 +423,17 @@ knn_test_x <- df_test %>%
 knn_train_y <- df_train$productivity_score
 knn_test_y  <- df_test$productivity_score
 
-########################
-# D2. Scale predictors using training set parameters
-########################
+
+#Scale predictors using training set parameters
+
 preproc <- preProcess(knn_train_x, method = c("center", "scale"))
 
 knn_train_x_scaled <- predict(preproc, knn_train_x)
 knn_test_x_scaled  <- predict(preproc, knn_test_x)
 
-########################
-# D3. Fit KNN regression with one k value first
-########################
+
+#Fit KNN regression with one k value first
+
 k_value <- 15
 
 knn_model_15 <- knn.reg(
@@ -452,18 +445,18 @@ knn_model_15 <- knn.reg(
 
 knn_pred_15 <- knn_model_15$pred
 
-########################
-# D4. Evaluate KNN regression
-########################
+
+#Evaluate KNN regression
+
 knn_mse_15  <- mean((knn_test_y - knn_pred_15)^2)
 knn_rmse_15 <- sqrt(knn_mse_15)
 
 knn_mse_15
 knn_rmse_15
 
-########################
-# D5. Compare several k values
-########################
+
+#Compare several k values
+
 k_grid <- c(3, 5, 7, 9, 11, 15, 21, 25, 31)
 
 knn_results <- data.frame(
@@ -492,17 +485,17 @@ for (k in k_grid) {
 
 knn_results
 
-########################
-# D6. Best k
-########################
+
+#Best k
+
 best_k_row <- knn_results[which.min(knn_results$rmse), ]
 best_k_row
 
 best_k <- best_k_row$k
 
-########################
-# D7. Fit final KNN regression with best k
-########################
+
+#Fit final KNN regression with best k
+
 knn_final <- knn.reg(
   train = knn_train_x_scaled,
   test  = knn_test_x_scaled,
@@ -518,9 +511,9 @@ knn_final_rmse <- sqrt(knn_final_mse)
 knn_final_mse
 knn_final_rmse
 
-########################
-# D8. Plot K vs RMSE
-########################
+
+#Plot K vs RMSE
+
 ggplot(knn_results, aes(x = k, y = rmse)) +
   geom_line(color = "blue") +
   geom_point(size = 2, color = "red") +
@@ -531,9 +524,9 @@ ggplot(knn_results, aes(x = k, y = rmse)) +
   ) +
   theme_minimal()
 
-########################
-# D9. Actual vs predicted plot for final KNN
-########################
+
+#Actual vs predicted plot for final KNN
+
 ggplot(data.frame(actual = knn_test_y, predicted = knn_pred_final),
        aes(x = actual, y = predicted)) +
   geom_point(alpha = 0.4, color = "brown") +
@@ -545,16 +538,10 @@ ggplot(data.frame(actual = knn_test_y, predicted = knn_pred_final),
   ) +
   theme_minimal()
 
-############################################################
-# PART E. OPTIONAL LOGISTIC REGRESSION
-############################################################
-# This is not the main model for your question.
-# We only include it because you previously asked for logistic regression.
-# Here, the target is High vs Low productivity.
 
-########################
-# E1. Logistic regression model
-########################
+
+#Logistic regression model
+
 logit_model <- glm(
   high_productivity ~ study_hours_per_day +
     focus_score +
@@ -568,14 +555,14 @@ logit_model <- glm(
 
 summary(logit_model)
 
-########################
-# E2. Predict probabilities on test set
-########################
+
+#Predict probabilities on test set
+
 logit_prob <- predict(logit_model, newdata = df_test, type = "response")
 
-########################
-# E3. Convert probabilities to class labels
-########################
+
+#Convert probabilities to class labels
+
 logit_pred <- ifelse(logit_prob > 0.5, "High", "Low")
 logit_pred <- factor(logit_pred, levels = c("Low", "High"))
 
