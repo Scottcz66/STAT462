@@ -8,23 +8,6 @@ date: "2026-03-17"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
-```
-
-## Including Plots
-
-
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
-
-
 
 ```{r}
 library(tidyverse)
@@ -38,32 +21,19 @@ library(caret)
 library(ROCR) 
 library(class)      # For KNN implementation
 library(corrplot)
+library(MASS)
 ```
 
-```{r}
 
+
+
+#data clean and split train and test by 80/20
+```{r}
 data <- read.csv("student_productivity.csv")
-head(data, 5)
-```
-
-
-#vis and prepare everything
-```{r}
 data <- na.omit(data)
 dim(data)
 
 
-#Keep useful variables and basic cleaning
-#Convert gender to factor
-data$gender <- as.factor(data$gender)
-data$high_productivity <- ifelse(
-  data$productivity_score > median(data$productivity_score),
-  "High", "Low"
-)
-data$high_productivity <- factor(data$high_productivity, levels = c("Low", "High"))
-
-
-#Research question setup
 
 #Main response variable
 y_var <- "productivity_score"
@@ -82,10 +52,10 @@ mlr_vars <- c(
   "stress_level"
 )
 
-########################
-# 5. Train / test split
-########################
-set.seed(462)
+
+#Train / test split
+
+set.seed(43)
 
 train_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
 df_train <- data[train_index, ]
@@ -93,14 +63,13 @@ df_test  <- data[-train_index, ]
 
 dim(df_train)
 dim(df_test)
+```
 
-############################################################
-# PART A. EDA / VISUALISATION
-############################################################
 
-########################
-# A1. Histogram of study hours
-########################
+#dataset vis
+```{r}
+#EDA / VISUALISATION
+#Histogram of study hours
 ggplot(data, aes(x = study_hours_per_day)) +
   geom_histogram(bins = 30, fill = "skyblue", color = "black") +
   labs(
@@ -110,9 +79,7 @@ ggplot(data, aes(x = study_hours_per_day)) +
   ) +
   theme_minimal()
 
-########################
-# A2. Histogram of productivity score
-########################
+#Histogram of productivity score
 ggplot(data, aes(x = productivity_score)) +
   geom_histogram(bins = 30, fill = "tomato", color = "black") +
   labs(
@@ -122,9 +89,8 @@ ggplot(data, aes(x = productivity_score)) +
   ) +
   theme_minimal()
 
-########################
-# A3. KDE / Density plot of study hours
-########################
+#KDE / Density plot of study hours
+
 ggplot(data, aes(x = study_hours_per_day)) +
   geom_density(fill = "lightblue", alpha = 0.5) +
   labs(
@@ -134,9 +100,9 @@ ggplot(data, aes(x = study_hours_per_day)) +
   ) +
   theme_minimal()
 
-########################
-# A4. KDE / Density plot of productivity score
-########################
+
+#KDE / Density plot of productivity score
+
 ggplot(data, aes(x = productivity_score)) +
   geom_density(fill = "salmon", alpha = 0.5) +
   labs(
@@ -146,9 +112,9 @@ ggplot(data, aes(x = productivity_score)) +
   ) +
   theme_minimal()
 
-########################
-# A5. Boxplot of productivity score
-########################
+
+#Boxplot of productivity score
+
 ggplot(data, aes(y = productivity_score)) +
   geom_boxplot(fill = "orange", alpha = 0.7) +
   labs(
@@ -157,9 +123,9 @@ ggplot(data, aes(y = productivity_score)) +
   ) +
   theme_minimal()
 
-########################
-# A6. Boxplot of productivity score by gender
-########################
+
+#Boxplot of productivity score by gender
+
 ggplot(data, aes(x = gender, y = productivity_score, fill = gender)) +
   geom_boxplot(alpha = 0.7) +
   labs(
@@ -170,10 +136,10 @@ ggplot(data, aes(x = gender, y = productivity_score, fill = gender)) +
   theme_minimal() +
   theme(legend.position = "none")
 
-########################
-# A7. Boxplot of productivity level groups by study hours
-# Create study-hour groups for clearer boxplot
-########################
+
+#Boxplot of productivity level groups by study hours
+#Create study-hour groups for clearer boxplot
+
 data$study_hour_group <- cut(
   data$study_hours_per_day,
   breaks = c(-Inf, 2, 4, 6, 8, Inf),
@@ -190,9 +156,8 @@ ggplot(data, aes(x = study_hour_group, y = productivity_score, fill = study_hour
   theme_minimal() +
   theme(legend.position = "none")
 
-########################
-# A8. Scatterplot: core relationship
-########################
+
+#Scatterplot: core relationship
 ggplot(data, aes(x = study_hours_per_day, y = productivity_score)) +
   geom_point(alpha = 0.35, color = "steelblue") +
   geom_smooth(method = "lm", se = TRUE, color = "red") +
@@ -203,9 +168,9 @@ ggplot(data, aes(x = study_hours_per_day, y = productivity_score)) +
   ) +
   theme_minimal()
 
-########################
-# A9. Scatterplot with color by gender
-########################
+
+#Scatterplot with color by gender
+
 ggplot(data, aes(x = study_hours_per_day, y = productivity_score, color = gender)) +
   geom_point(alpha = 0.35) +
   geom_smooth(method = "lm", se = FALSE) +
@@ -216,25 +181,26 @@ ggplot(data, aes(x = study_hours_per_day, y = productivity_score, color = gender
   ) +
   theme_minimal()
 
-########################
-# A10. Density plot of productivity score by high/low productivity
-########################
-ggplot(data, aes(x = productivity_score, fill = high_productivity)) +
-  geom_density(alpha = 0.4) +
-  labs(
-    title = "Density of Productivity Score by Binary Group",
-    x = "Productivity Score",
-    y = "Density"
-  ) +
-  theme_minimal()
+#Density plot of productivity score by high/low productivity
+#ggplot(data, aes(x = productivity_score, fill = lr_high_productivity)) +
+  #geom_density(alpha = 0.4) +
+  #labs(
+    #title = "Density of Productivity Score by Binary Group",
+    #x = "Productivity Score",
+    #y = "Density"
+  #) +
+  #theme_minimal()
+```
+```{r}
+names(data)
+```
 
-########################
-# A11. Correlation matrix for numeric variables
-########################
-# Numeric variables only
+#vis and prepare everything
+```{r}
+#Correlation matrix for numeric variables
+#Numeric variables only
 numeric_data <- data %>%
-  select(
-    age,
+  dplyr::select(age,
     study_hours_per_day,
     sleep_hours,
     phone_usage_hours,
@@ -268,11 +234,10 @@ corrplot(
   number.cex = 0.5
 )
 
-########################
-# A12. Pair plot for selected variables
-########################
+#Pair plot for selected variables
+
 data %>%
-  select(
+  dplyr::select(
     study_hours_per_day,
     productivity_score,
     focus_score,
@@ -288,7 +253,7 @@ data %>%
 
 
 
-#modelling
+#linear modelling
 ```{r}
 
 #SIMPLE LINEAR REGRESSION
@@ -328,20 +293,15 @@ ggplot(data.frame(actual = df_test$productivity_score, predicted = slr_pred),
   ) +
   theme_minimal()
 
-########################
-# B5. Diagnostic plots
-########################
+
+#Diagnostic plots
 par(mfrow = c(2, 2))
 plot(slr_model)
 par(mfrow = c(1, 1))
 
-############################################################
-# PART C. MULTIPLE LINEAR REGRESSION
-############################################################
 
-########################
-# C1. Fit multiple linear regression
-########################
+#MULTIPLE LINEAR REGRESSION
+#Fit multiple linear regression
 mlr_model <- lm(
   productivity_score ~ study_hours_per_day +
     focus_score +
@@ -354,9 +314,9 @@ mlr_model <- lm(
 
 summary(mlr_model)
 
-########################
-# C2. Predictions on test set
-########################
+
+# Predictions on test set
+
 mlr_pred <- predict(mlr_model, newdata = df_test)
 
 ########################
@@ -401,7 +361,7 @@ par(mfrow = c(1, 1))
 #Select predictors for KNN
 
 knn_train_x <- df_train %>%
-  select(
+  dplyr::select(
     study_hours_per_day,
     focus_score,
     attendance_percentage,
@@ -411,7 +371,7 @@ knn_train_x <- df_train %>%
   )
 
 knn_test_x <- df_test %>%
-  select(
+  dplyr::select(
     study_hours_per_day,
     focus_score,
     attendance_percentage,
@@ -540,22 +500,6 @@ ggplot(data.frame(actual = knn_test_y, predicted = knn_pred_final),
 
 
 
-#Logistic regression model
-
-logit_model <- glm(
-  high_productivity ~ study_hours_per_day +
-    focus_score +
-    attendance_percentage +
-    assignments_completed +
-    sleep_hours +
-    stress_level,
-  data = df_train,
-  family = binomial
-)
-
-summary(logit_model)
-
-
 #Predict probabilities on test set
 
 logit_prob <- predict(logit_model, newdata = df_test, type = "response")
@@ -568,7 +512,7 @@ logit_pred <- factor(logit_pred, levels = c("Low", "High"))
 
 
 #Actual classes
-logit_actual <- df_test$high_productivity
+#logit_actual <- df_test$lr_high_productivity
 
 #E5. Confusion matrix
 confusionMatrix(logit_pred, logit_actual, positive = "High")
@@ -604,7 +548,7 @@ print(comparison_table)
 
 
 ```{r}
-# Create standardized training data
+#Create standardized training data
 df_train_std <- df_train %>%
   mutate(
     productivity_score = scale(productivity_score)[, 1],
@@ -664,5 +608,65 @@ ggplot(std_coef_table_no_intercept,
 
 
 ```
+
+#logistic regression model
+```{r}
+#need to redefine
+set.seed(43)
+train_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
+df_train <- data[train_index, ]
+df_test <- data[-train_index, ]
+
+data$high_productivity <- ifelse(
+  data$productivity_score >= median(data$productivity_score),
+  1, 0
+)
+data$high_productivity <- factor(data$high_productivity, levels = c(0, 1))
+
+table(data$high_productivity)  #do not need i think
+
+# Simple logistic regression
+log_model_simple <- glm(
+  high_productivity ~ study_hours_per_day,
+  data = df_train,
+  family = binomial
+)
+
+summary(log_model_simple)
+
+log_prob_simple <- predict(log_model_simple, newdata = df_test, type = "response")
+
+log_pred_simple <- ifelse(log_prob_simple >= 0.5, 1, 0)
+log_pred_simple <- factor(log_pred_simple, levels = c(0, 1))
+
+confusionMatrix(log_pred_simple, df_test$high_productivity, positive = "1")
+
+```
+
+```{r}
+head(data, 5)
+```
+
+
+#muti logistic regression model
+```{r}
+# stress_level(and phone_usage_hours) is high negative correlation with productivity_score
+log_model_simple <- glm(
+  high_productivity ~ study_hours_per_day + focus_score + sleep_hours + stress_level + attendance_percentage,
+  data = df_train,
+  family = binomial
+)
+summary(log_model_simple)
+
+#Predicted probabilities 
+log_prob_simple <- predict(log_model_simple, newdata = df_test, type = "response")
+
+log_pred_simple <- ifelse(log_prob_simple >= 0.5, 1, 0)
+log_pred_simple <- factor(log_pred_simple, levels = c(0, 1))
+
+confusionMatrix(log_pred_simple, df_test$high_productivity, positive = "1")
+```
+
+
 
 
