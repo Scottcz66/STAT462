@@ -1,0 +1,135 @@
+---
+title: "new"
+output: html_document
+date: "2026-03-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+#install.packages("FNN")
+library(FNN)
+library(pROC)
+library(caret)
+```
+
+
+
+```{r}
+# Load required libraries
+library(tidyverse)  # For data manipulation and visualization
+library(caret)      # For model training and evaluation
+library(class)      # For KNN implementation
+library(ROCR)       # For performance evaluation of classification models
+
+# Load the dataset
+data <- read.csv("student_productivity.csv")
+
+# Check the first few rows of the dataset
+head(data)
+
+# --- Step 1: Simple Linear Regression ---
+# We are trying to predict 'productivity_score' based on a single feature: 'study_hours_per_day'
+model_simple <- lm(productivity_score ~ study_hours_per_day, data = data)
+summary(model_simple)
+
+# Predictions
+predictions_simple <- predict(model_simple, newdata = data)
+
+# Plotting Simple Linear Regression
+ggplot(data, aes(x = study_hours_per_day, y = productivity_score)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(title = "Simple Linear Regression: Study Hours vs Productivity Score")
+
+# --- Step 2: Multiple Linear Regression ---
+# Now we include more features like 'study_hours_per_day', 'focus_score', 'attendance_percentage'
+model_multiple <- lm(productivity_score ~ study_hours_per_day + focus_score + attendance_percentage, data = data)
+summary(model_multiple)
+
+# Predictions
+predictions_multiple <- predict(model_multiple, newdata = data)
+
+# Plotting Multiple Linear Regression (Only first two predictors for clarity)
+ggplot(data, aes(x = study_hours_per_day, y = productivity_score)) +
+  geom_point(aes(color = focus_score)) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Multiple Linear Regression: Study Hours vs Productivity Score")
+
+# --- Step 3: K-Nearest Neighbors (KNN) ---
+# We will use the 'focus_score' and 'study_hours_per_day' to predict 'productivity_score'
+set.seed(42)
+train_indices <- sample(1:nrow(data), size = 0.8 * nrow(data))
+train_data <- data[train_indices, ]
+test_data <- data[-train_indices, ]
+
+# Normalizing data for KNN
+train_data_norm <- as.data.frame(scale(train_data %>% select(study_hours_per_day, focus_score)))
+test_data_norm <- as.data.frame(scale(test_data %>% select(study_hours_per_day, focus_score)))
+
+# 将预测值和实际值转换为因子
+knn_pred <- factor(knn_pred)
+test_data$productivity_score <- factor(test_data$productivity_score)
+
+# 确保它们具有相同的水平
+levels(knn_pred) <- levels(test_data$productivity_score)
+
+# 计算混淆矩阵
+confusionMatrix(knn_pred, test_data$productivity_score)
+
+# --- Step 4: Logistic Regression ---
+# We need a binary outcome for logistic regression. We'll create a binary variable for 'high_productivity'
+data$high_productivity <- ifelse(data$productivity_score > median(data$productivity_score), 1, 0)
+
+# Logistic regression model
+model_logistic <- glm(high_productivity ~ study_hours_per_day + focus_score + attendance_percentage, data = data, family = binomial)
+summary(model_logistic)
+
+# Predictions for logistic regression
+predictions_logistic <- predict(model_logistic, newdata = data, type = "response")
+
+# Convert probabilities to class labels
+predicted_classes <- ifelse(predictions_logistic > 0.5, 1, 0)
+
+# Evaluate the model using ROC Curve
+pred <- prediction(predictions_logistic, data$high_productivity)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, col = "blue", main = "ROC Curve for Logistic Regression")
+
+# --- Summary ---
+# We have implemented 4 models:
+# 1. Simple Linear Regression
+# 2. Multiple Linear Regression
+# 3. K-Nearest Neighbors (KNN)
+# 4. Logistic Regression
+```
+
+
