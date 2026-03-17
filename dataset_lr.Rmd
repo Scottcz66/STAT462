@@ -1,0 +1,652 @@
+---
+title: "new"
+output: html_document
+date: "2026-03-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+#install.packages("FNN")
+library(FNN)
+library(pROC)
+library(caret)
+library(ROCR) 
+library(class)      # For KNN implementation
+library(corrplot)
+library(MASS)
+```
+
+
+
+
+#data clean and split train and test by 80/20
+```{r}
+data <- read.csv("student_productivity.csv")
+data <- na.omit(data)
+dim(data)
+
+
+
+#Main response variable
+y_var <- "productivity_score"
+
+#Main predictor for the core question
+x_var <- "study_hours_per_day"
+
+# Additional predictors for multiple regression
+# Choose behavioural / study-related variables
+mlr_vars <- c(
+  "study_hours_per_day",
+  "focus_score",
+  "attendance_percentage",
+  "assignments_completed",
+  "sleep_hours",
+  "stress_level"
+)
+
+
+#Train / test split
+
+set.seed(43)
+
+train_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
+df_train <- data[train_index, ]
+df_test  <- data[-train_index, ]
+
+dim(df_train)
+dim(df_test)
+```
+
+
+#dataset vis
+```{r}
+#EDA / VISUALISATION
+#Histogram of study hours
+ggplot(data, aes(x = study_hours_per_day)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  labs(
+    title = "Histogram of Study Hours Per Day",
+    x = "Study Hours Per Day",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+#Histogram of productivity score
+ggplot(data, aes(x = productivity_score)) +
+  geom_histogram(bins = 30, fill = "tomato", color = "black") +
+  labs(
+    title = "Histogram of Productivity Score",
+    x = "Productivity Score",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+#KDE / Density plot of study hours
+
+ggplot(data, aes(x = study_hours_per_day)) +
+  geom_density(fill = "lightblue", alpha = 0.5) +
+  labs(
+    title = "Density Plot of Study Hours Per Day",
+    x = "Study Hours Per Day",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+
+#KDE / Density plot of productivity score
+
+ggplot(data, aes(x = productivity_score)) +
+  geom_density(fill = "salmon", alpha = 0.5) +
+  labs(
+    title = "Density Plot of Productivity Score",
+    x = "Productivity Score",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+
+#Boxplot of productivity score
+
+ggplot(data, aes(y = productivity_score)) +
+  geom_boxplot(fill = "orange", alpha = 0.7) +
+  labs(
+    title = "Boxplot of Productivity Score",
+    y = "Productivity Score"
+  ) +
+  theme_minimal()
+
+
+#Boxplot of productivity score by gender
+
+ggplot(data, aes(x = gender, y = productivity_score, fill = gender)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(
+    title = "Productivity Score by Gender",
+    x = "Gender",
+    y = "Productivity Score"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+#Boxplot of productivity level groups by study hours
+#Create study-hour groups for clearer boxplot
+
+data$study_hour_group <- cut(
+  data$study_hours_per_day,
+  breaks = c(-Inf, 2, 4, 6, 8, Inf),
+  labels = c("<=2", "2-4", "4-6", "6-8", ">8")
+)
+
+ggplot(data, aes(x = study_hour_group, y = productivity_score, fill = study_hour_group)) +
+  geom_boxplot(alpha = 0.8) +
+  labs(
+    title = "Productivity Score Across Study Hour Groups",
+    x = "Study Hours Group",
+    y = "Productivity Score"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+#Scatterplot: core relationship
+ggplot(data, aes(x = study_hours_per_day, y = productivity_score)) +
+  geom_point(alpha = 0.35, color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(
+    title = "Study Hours Per Day vs Productivity Score",
+    x = "Study Hours Per Day",
+    y = "Productivity Score"
+  ) +
+  theme_minimal()
+
+
+#Scatterplot with color by gender
+
+ggplot(data, aes(x = study_hours_per_day, y = productivity_score, color = gender)) +
+  geom_point(alpha = 0.35) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Study Hours vs Productivity Score by Gender",
+    x = "Study Hours Per Day",
+    y = "Productivity Score"
+  ) +
+  theme_minimal()
+
+#Density plot of productivity score by high/low productivity
+#ggplot(data, aes(x = productivity_score, fill = lr_high_productivity)) +
+  #geom_density(alpha = 0.4) +
+  #labs(
+    #title = "Density of Productivity Score by Binary Group",
+    #x = "Productivity Score",
+    #y = "Density"
+  #) +
+  #theme_minimal()
+```
+```{r}
+names(data)
+```
+
+#vis and prepare everything
+```{r}
+#Correlation matrix for numeric variables
+#Numeric variables only
+numeric_data <- data %>%
+  dplyr::select(age,
+    study_hours_per_day,
+    sleep_hours,
+    phone_usage_hours,
+    social_media_hours,
+    youtube_hours,
+    gaming_hours,
+    breaks_per_day,
+    coffee_intake_mg,
+    exercise_minutes,
+    assignments_completed,
+    attendance_percentage,
+    stress_level,
+    focus_score,
+    final_grade,
+    productivity_score
+  )
+
+# Correlation matrix
+cor_matrix <- cor(numeric_data)
+
+# Show more decimals
+round(cor_matrix, 4)
+
+corrplot(
+  cor_matrix,
+  method = "color",
+  type = "upper",
+  tl.col = "black",
+  tl.cex = 0.7,
+  addCoef.col = "black",
+  number.cex = 0.5
+)
+
+#Pair plot for selected variables
+
+data %>%
+  dplyr::select(
+    study_hours_per_day,
+    productivity_score,
+    focus_score,
+    attendance_percentage,
+    assignments_completed,
+    sleep_hours,
+    stress_level
+  ) %>%
+  ggpairs()
+```
+
+
+
+
+
+#linear modelling
+```{r}
+
+#SIMPLE LINEAR REGRESSION
+
+#Fit simple linear regression
+slr_model <- lm(productivity_score ~ study_hours_per_day, data = df_train)
+
+summary(slr_model)
+
+
+#Predictions on test set
+
+slr_pred <- predict(slr_model, newdata = df_test)
+
+
+#Evaluate SLR
+
+slr_mse  <- mean((df_test$productivity_score - slr_pred)^2)
+slr_rmse <- sqrt(slr_mse)
+slr_r2_train <- summary(slr_model)$r.squared
+
+slr_mse
+slr_rmse
+slr_r2_train
+
+#lab1
+kNN_1d <- function(data, k = 15, x0, y0, xstar) {
+  ystar <- data %>%
+    mutate(dist = abs(.data[[x0]] - xstar)) %>%
+    arrange(dist) %>%
+    slice(1:k) %>%
+    pull(.data[[y0]]) %>%
+    mean()
+
+  return(ystar)
+}
+b0 <- coef(slr_model)[1]
+b1 <- coef(slr_model)[2]
+
+xval <- seq(
+  min(df_train$study_hours_per_day),
+  max(df_train$study_hours_per_day),
+  length.out = 300
+)
+
+knn_pred_curve <- sapply(
+  xval,
+  function(x) kNN_1d(
+    data = df_train,
+    k = 15,
+    x0 = "study_hours_per_day",
+    y0 = "productivity_score",
+    xstar = x
+  )
+)
+
+knn_results_curve <- data.frame(
+  x = xval,
+  y = knn_pred_curve
+)
+
+ggplot(data = df_train, aes(x = study_hours_per_day, y = productivity_score)) +
+  geom_point(color = "grey30", alpha = 0.35) +
+  geom_abline(aes(slope = b1, intercept = b0, colour = "SLR")) +
+  geom_point(
+    data = knn_results_curve,
+    aes(x = x, y = y, colour = "KNN"),
+    size = 0.4
+  ) +
+  labs(
+    title = "SLR vs KNN for Productivity Score",
+    x = "Study Hours Per Day",
+    y = "Productivity Score"
+  ) +
+  scale_colour_manual(name = "Model", values = c("KNN" = "red", "SLR" = "blue")) +
+  theme_minimal()
+
+
+#Actual vs predicted plot
+
+ggplot(data.frame(actual = df_test$productivity_score, predicted = slr_pred),
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.4, color = "purple") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Simple Linear Regression: Actual vs Predicted",
+    x = "Actual Productivity Score",
+    y = "Predicted Productivity Score"
+  ) +
+  theme_minimal()
+
+
+#Diagnostic plots
+par(mfrow = c(2, 2))
+plot(slr_model)
+par(mfrow = c(1, 1))
+
+
+#MULTIPLE LINEAR REGRESSION
+#Fit multiple linear regression
+mlr_model <- lm(
+  productivity_score ~ study_hours_per_day +
+    focus_score +
+    attendance_percentage +
+    assignments_completed +
+    sleep_hours +
+    stress_level,
+  data = df_train
+)
+
+summary(mlr_model)
+
+
+# Predictions on test set
+
+mlr_pred <- predict(mlr_model, newdata = df_test)
+
+########################
+# C3. Evaluate MLR
+########################
+mlr_mse  <- mean((df_test$productivity_score - mlr_pred)^2)
+mlr_rmse <- sqrt(mlr_mse)
+mlr_r2_train <- summary(mlr_model)$r.squared
+mlr_adj_r2_train <- summary(mlr_model)$adj.r.squared
+
+mlr_mse
+mlr_rmse
+mlr_r2_train
+mlr_adj_r2_train
+
+
+#Actual vs predicted plot
+
+ggplot(data.frame(actual = df_test$productivity_score, predicted = mlr_pred),
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.4, color = "darkgreen") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Multiple Linear Regression: Actual vs Predicted",
+    x = "Actual Productivity Score",
+    y = "Predicted Productivity Score"
+  ) +
+  theme_minimal()
+
+
+#Diagnostic plots
+
+par(mfrow = c(2, 2))
+plot(mlr_model)
+par(mfrow = c(1, 1))
+
+
+#KNN REGRESSION
+
+
+
+#Select predictors for KNN
+
+# KNN predictors
+knn_train_x <- train_data %>%
+  dplyr::select(study_hours_per_day, focus_score, attendance_percentage)
+
+knn_test_x <- test_data %>%
+  dplyr::select(study_hours_per_day, focus_score, attendance_percentage)
+
+knn_train_y <- train_data$productivity_score
+knn_test_y  <- test_data$productivity_score
+
+# Scale using training set only
+preproc <- preProcess(knn_train_x, method = c("center", "scale"))
+
+knn_train_x_scaled <- predict(preproc, knn_train_x)
+knn_test_x_scaled  <- predict(preproc, knn_test_x)
+
+
+#Fit KNN regression with one k value first
+
+k_value <- 15
+
+knn_model_15 <- knn.reg(
+  train = knn_train_x_scaled,
+  test  = knn_test_x_scaled,
+  y     = knn_train_y,
+  k     = k_value
+)
+
+knn_pred_15 <- knn_model_15$pred
+
+
+#Evaluate KNN regression
+
+knn_mse_15  <- mean((knn_test_y - knn_pred_15)^2)
+knn_rmse_15 <- sqrt(knn_mse_15)
+
+knn_mse_15
+knn_rmse_15
+
+
+#Compare several k values
+
+k_grid <- c(3, 5, 7, 9, 11, 15, 21, 25, 31)
+
+knn_results <- data.frame(
+  k = integer(),
+  mse = numeric(),
+  rmse = numeric()
+)
+
+for (k in k_grid) {
+  knn_fit <- knn.reg(
+    train = knn_train_x_scaled,
+    test  = knn_test_x_scaled,
+    y     = knn_train_y,
+    k     = k
+  )
+
+  pred_k <- knn_fit$pred
+  mse_k  <- mean((knn_test_y - pred_k)^2)
+  rmse_k <- sqrt(mse_k)
+
+  knn_results <- rbind(
+    knn_results,
+    data.frame(k = k, mse = mse_k, rmse = rmse_k)
+  )
+}
+
+knn_results
+
+
+#Best k
+
+best_k_row <- knn_results[which.min(knn_results$rmse), ]
+best_k_row
+
+best_k <- best_k_row$k
+
+
+#Fit final KNN regression with best k
+
+knn_final <- knn.reg(
+  train = knn_train_x_scaled,
+  test  = knn_test_x_scaled,
+  y     = knn_train_y,
+  k     = best_k
+)
+
+knn_pred_final <- knn_final$pred
+
+knn_final_mse  <- mean((knn_test_y - knn_pred_final)^2)
+knn_final_rmse <- sqrt(knn_final_mse)
+
+knn_final_mse
+knn_final_rmse
+
+
+#Plot K vs RMSE
+
+ggplot(knn_results, aes(x = k, y = rmse)) +
+  geom_line(color = "blue") +
+  geom_point(size = 2, color = "red") +
+  labs(
+    title = "KNN Regression: RMSE for Different k Values",
+    x = "k",
+    y = "RMSE"
+  ) +
+  theme_minimal()
+
+
+#Actual vs predicted plot for final KNN
+
+ggplot(data.frame(actual = knn_test_y, predicted = knn_pred_final),
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.4, color = "brown") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = paste("KNN Regression (k =", best_k, "): Actual vs Predicted"),
+    x = "Actual Productivity Score",
+    y = "Predicted Productivity Score"
+  ) +
+  theme_minimal()
+
+
+
+#Predict probabilities on test set
+
+logit_prob <- predict(logit_model, newdata = df_test, type = "response")
+
+
+#Convert probabilities to class labels
+
+logit_pred <- ifelse(logit_prob > 0.5, "High", "Low")
+logit_pred <- factor(logit_pred, levels = c("Low", "High"))
+
+
+#Actual classes
+#logit_actual <- df_test$lr_high_productivity
+
+#E5. Confusion matrix
+confusionMatrix(logit_pred, logit_actual, positive = "High")
+
+
+#PART F. MODEL COMPARISON
+comparison_table <- data.frame(
+  Model = c("Simple Linear Regression", "Multiple Linear Regression", "KNN Regression"),
+  Test_MSE = c(slr_mse, mlr_mse, knn_final_mse),
+  Test_RMSE = c(slr_rmse, mlr_rmse, knn_final_rmse)
+)
+
+comparison_table
+
+cat("Main Research Question:\n")
+cat("What is the relationship between study_hours_per_day and productivity_score?\n")
+cat("Can study_hours_per_day predict productivity_score?\n\n")
+
+cat("SLR coefficient for study_hours_per_day:\n")
+print(coef(slr_model))
+
+cat("\nMLR coefficients:\n")
+print(coef(mlr_model))
+
+cat("\nBest k for KNN regression:\n")
+print(best_k)
+
+cat("\nModel comparison:\n")
+print(comparison_table)
+```
+
+
+
+
+```{r}
+#Create standardized training data
+df_train_std <- df_train %>%
+  mutate(
+    productivity_score = scale(productivity_score)[, 1],
+    study_hours_per_day = scale(study_hours_per_day)[, 1],
+    focus_score = scale(focus_score)[, 1],
+    attendance_percentage = scale(attendance_percentage)[, 1],
+    assignments_completed = scale(assignments_completed)[, 1],
+    sleep_hours = scale(sleep_hours)[, 1],
+    stress_level = scale(stress_level)[, 1]
+  )
+
+# Fit standardized multiple linear regression
+mlr_model_std <- lm(
+  productivity_score ~ study_hours_per_day +
+    focus_score +
+    attendance_percentage +
+    assignments_completed +
+    sleep_hours +
+    stress_level,
+  data = df_train_std
+)
+
+summary(mlr_model_std)
+
+std_coef <- summary(mlr_model_std)$coefficients
+std_coef
+
+std_coef_table <- data.frame(
+  Variable = rownames(std_coef),
+  Estimate = std_coef[, "Estimate"],
+  Std_Error = std_coef[, "Std. Error"],
+  t_value = std_coef[, "t value"],
+  p_value = std_coef[, "Pr(>|t|)"]
+)
+
+std_coef_table
+
+
+std_coef_table_no_intercept <- std_coef_table %>%
+  filter(Variable != "(Intercept)") %>%
+  mutate(abs_estimate = abs(Estimate)) %>%
+  arrange(desc(abs_estimate))
+
+std_coef_table_no_intercept
+
+ggplot(std_coef_table_no_intercept,
+       aes(x = reorder(Variable, abs_estimate), y = abs_estimate)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Feature Importance Based on Standardized Coefficients",
+    x = "Feature",
+    y = "Absolute Standardized Coefficient"
+  ) +
+  theme_minimal()
+
+
+
+```
+
+
+
+
+

@@ -1,0 +1,176 @@
+---
+title: "douxing"
+output: html_document
+date: "2026-03-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+#install.packages("FNN")
+library(FNN)
+library(pROC)
+library(caret)
+library(ROCR) 
+library(class)      # For KNN implementation
+library(corrplot)
+library(MASS)
+```
+
+
+```{r}
+data <- read.csv("student_productivity.csv")
+data <- na.omit(data)
+dim(data)
+```
+
+
+#logistic regression model
+```{r}
+#need to redefine
+set.seed(43)
+train_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
+df_train <- data[train_index, ]
+df_test <- data[-train_index, ]
+
+data$high_productivity <- ifelse(
+  data$productivity_score >= median(data$productivity_score),
+  1, 0
+)
+data$high_productivity <- factor(data$high_productivity, levels = c(0, 1))
+
+table(data$high_productivity)  #do not need i think
+
+# Simple logistic regression
+log_model_simple <- glm(
+  high_productivity ~ study_hours_per_day,
+  data = df_train,
+  family = binomial
+)
+
+summary(log_model_simple)
+
+log_prob_simple <- predict(log_model_simple, newdata = df_test, type = "response")
+
+log_pred_simple <- ifelse(log_prob_simple >= 0.5, 1, 0)
+log_pred_simple <- factor(log_pred_simple, levels = c(0, 1))
+
+confusionMatrix(log_pred_simple, df_test$high_productivity, positive = "1")
+
+roc_simple <- roc(as.numeric(as.character(df_test$high_productivity)), log_prob_simple)
+auc_simple <- auc(roc_simple)
+auc_simple
+
+plot(
+  roc_simple,
+  col = "blue",
+  main = "ROC Curve for Simple Logistic Regression"
+)
+
+polygon(
+  c(roc_simple$specificities, 0),
+  c(roc_simple$sensitivities, 0),
+  col = rgb(1, 0, 0, 0.3),
+  border = NA
+)
+
+legend(
+  "bottomright",
+  legend = c("ROC", paste("AUC =", round(auc_simple, 3))),
+  col = c("blue", rgb(1, 0, 0, 0.3)),
+  lwd = c(1, NA),
+  pch = c(NA, 15),
+  pt.cex = 1,
+  box.lty = 0,
+  cex = 0.8
+)
+
+```
+
+```{r}
+head(data, 5)
+```
+
+
+#muti logistic regression model
+```{r}
+# stress_level(and phone_usage_hours) is high negative correlation with productivity_score
+log_model_multiple <- glm(
+  high_productivity ~ study_hours_per_day + focus_score + sleep_hours + stress_level + attendance_percentage,
+  data = df_train,
+  family = binomial
+)
+summary(log_model_multiple)
+
+log_prob_multiple <- predict(log_model_multiple, newdata = df_test, type = "response")
+
+log_pred_multiple <- ifelse(log_prob_multiple >= 0.5, 1, 0)
+log_pred_multiple <- factor(log_pred_multiple, levels = c(0, 1))
+
+confusionMatrix(log_pred_multiple, df_test$high_productivity, positive = "1")
+
+roc_multiple <- roc(as.numeric(as.character(df_test$high_productivity)), log_prob_multiple)
+auc_multiple <- auc(roc_multiple)
+auc_multiple
+
+plot(
+  roc_multiple,
+  col = "red",
+  main = "ROC Curve for Multiple Logistic Regression"
+)
+
+polygon(
+  c(roc_multiple$specificities, 0),
+  c(roc_multiple$sensitivities, 0),
+  col = rgb(1, 0, 0, 0.3),
+  border = NA
+)
+
+legend(
+  "bottomright",
+  legend = c("ROC", paste("AUC =", round(auc_multiple, 3))),
+  col = c("red", rgb(1, 0, 0, 0.3)),
+  lwd = c(1, NA),
+  pch = c(NA, 15),
+  pt.cex = 1,
+  box.lty = 0,
+  cex = 0.8
+)
+
+
+
+#Predicted probabilities 
+log_prob_simple <- predict(log_model_simple, newdata = df_test, type = "response")
+
+log_pred_simple <- ifelse(log_prob_simple >= 0.5, 1, 0)
+log_pred_simple <- factor(log_pred_simple, levels = c(0, 1))
+
+confusionMatrix(log_pred_simple, df_test$high_productivity, positive = "1")
+```
