@@ -55,10 +55,7 @@ dim(data)
 #logistic regression model
 ```{r}
 #need to redefine
-set.seed(43)
-train_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
-df_train <- data[train_index, ]
-df_test <- data[-train_index, ]
+
 
 data$high_productivity <- ifelse(
   data$productivity_score >= median(data$productivity_score),
@@ -67,6 +64,14 @@ data$high_productivity <- ifelse(
 data$high_productivity <- factor(data$high_productivity, levels = c(0, 1))
 
 table(data$high_productivity)  #do not need i think
+
+
+set.seed(43)
+train_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
+df_train <- data[train_index, ]
+df_test <- data[-train_index, ]
+
+
 
 # Simple logistic regression
 log_model_simple <- glm(
@@ -117,6 +122,33 @@ legend(
 ```{r}
 head(data, 5)
 ```
+
+
+```{r}
+ggplot(data, aes(x = high_productivity, y = study_hours_per_day, fill = high_productivity)) +
+  geom_violin(alpha = 0.6) +
+  geom_boxplot(width = 0.15, fill = "white") +
+  labs(
+    title = "Study Hours by Productivity Group",
+    x = "High Productivity",
+    y = "Study Hours Per Day"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(data, aes(x = study_hours_per_day, y = productivity_score)) +
+  geom_point(alpha = 0.35) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  facet_wrap(~ gender) +
+  labs(
+    title = "Study Hours vs Productivity Score by Gender",
+    x = "Study Hours Per Day",
+    y = "Productivity Score"
+  ) +
+  theme_minimal()
+```
+
 
 
 #muti logistic regression model

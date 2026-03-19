@@ -609,64 +609,17 @@ ggplot(std_coef_table_no_intercept,
 
 ```
 
-#logistic regression model
-```{r}
-#need to redefine
-set.seed(43)
-train_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
-df_train <- data[train_index, ]
-df_test <- data[-train_index, ]
 
-data$high_productivity <- ifelse(
-  data$productivity_score >= median(data$productivity_score),
-  1, 0
-)
-data$high_productivity <- factor(data$high_productivity, levels = c(0, 1))
-
-table(data$high_productivity)  #do not need i think
-
-# Simple logistic regression
-log_model_simple <- glm(
-  high_productivity ~ study_hours_per_day,
-  data = df_train,
-  family = binomial
-)
-
-summary(log_model_simple)
-
-log_prob_simple <- predict(log_model_simple, newdata = df_test, type = "response")
-
-log_pred_simple <- ifelse(log_prob_simple >= 0.5, 1, 0)
-log_pred_simple <- factor(log_pred_simple, levels = c(0, 1))
-
-confusionMatrix(log_pred_simple, df_test$high_productivity, positive = "1")
-
-```
 
 ```{r}
-head(data, 5)
-```
-
-
-#muti logistic regression model
-```{r}
-# stress_level(and phone_usage_hours) is high negative correlation with productivity_score
-log_model_simple <- glm(
-  high_productivity ~ study_hours_per_day + focus_score + sleep_hours + stress_level + attendance_percentage,
-  data = df_train,
-  family = binomial
+comparison_table <- data.frame(
+  Model = c("SLR", "MLR", "KNN"),
+  Test_MSE = c(slr_mse, mlr_mse, knn_final_mse),
+  Test_RMSE = c(slr_rmse, mlr_rmse, knn_final_rmse)
 )
-summary(log_model_simple)
 
-#Predicted probabilities 
-log_prob_simple <- predict(log_model_simple, newdata = df_test, type = "response")
-
-log_pred_simple <- ifelse(log_prob_simple >= 0.5, 1, 0)
-log_pred_simple <- factor(log_pred_simple, levels = c(0, 1))
-
-confusionMatrix(log_pred_simple, df_test$high_productivity, positive = "1")
+comparison_table
 ```
-
 
 
 
