@@ -1,0 +1,692 @@
+---
+title: "Poster Outputs: Tree-based Models and Cluster Analysis"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# 1. Packages
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(cluster)
+
+set.seed(43)
+
+if (!dir.exists("poster_outputs")) {
+  dir.create("poster_outputs")
+}
+```
+
+# 2. Load and prepare data
+
+```{r}
+data <- read.csv("student_productivity.csv")
+
+data <- data %>%
+  drop_na() %>%
+  mutate(gender = as.factor(gender))
+
+str(data)
+summary(data$productivity_score)
+```
+
+# 3. Train-test split
+
+```{r}
+set.seed(43)
+train_index <- sample(1:nrow(data), size = 0.8 * nrow(data))
+
+train <- data[train_index, ]
+test  <- data[-train_index, ]
+
+nrow(train)
+nrow(test)
+```
+
+# 4. Tree-based regression models
+
+The target variable is `productivity_score`, so this is a regression task.
+`student_id` is removed because it is only an identifier.
+`final_grade` is also removed because it may be too close to the outcome and could weaken the interpretation of behavioural predictors.
+
+```{r}
+model_formula <- productivity_score ~
+  age +
+  gender +
+  study_hours_per_day +
+  sleep_hours +
+  phone_usage_hours +
+  social_media_hours +
+  youtube_hours +
+  gaming_hours +
+  breaks_per_day +
+  coffee_intake_mg +
+  exercise_minutes +
+  assignments_completed +
+  attendance_percentage +
+  stress_level +
+  focus_score
+```
+
+## 4.1 Regression tree
+
+```{r}
+set.seed(43)
+reg_tree <- rpart(
+  model_formula,
+  data = train,
+  method = "anova"
+)
+
+reg_tree
+```
+
+```{r, fig.width=10, fig.height=7}
+rpart.plot(
+  reg_tree,
+  main = "Regression Tree for Student Productivity",
+  type = 2,
+  extra = 101,
+  fallen.leaves = TRUE,
+  cex = 0.7
+)
+```
+
+```{r}
+png("poster_outputs/regression_tree.png", width = 1600, height = 1100, res = 150)
+rpart.plot(
+  reg_tree,
+  main = "Regression Tree for Student Productivity",
+  type = 2,
+  extra = 101,
+  fallen.leaves = TRUE,
+  cex = 0.7
+)
+dev.off()
+```
+
+## 4.2 Regression tree performance
+
+```{r}
+tree_pred <- predict(reg_tree, newdata = test)
+
+tree_mse <- mean((test$productivity_score - tree_pred)^2)
+tree_rmse <- sqrt(tree_mse)
+tree_r2 <- cor(test$productivity_score, tree_pred)^2
+
+tree_results <- data.frame(
+  Model = "Regression Tree",
+  Test_MSE = tree_mse,
+  Test_RMSE = tree_rmse,
+  Test_R2 = tree_r2
+)
+
+tree_results
+```
+
+## 4.3 Random forest regression
+
+```{r}
+set.seed(43)
+rf_model <- randomForest(
+  model_formula,
+  data = train,
+  mtry = 3,
+  ntree = 500,
+  importance = TRUE
+)
+
+rf_model
+```
+
+```{r}
+rf_pred <- predict(rf_model, newdata = test)
+
+rf_mse <- mean((test$productivity_score - rf_pred)^2)
+rf_rmse <- sqrt(rf_mse)
+rf_r2 <- cor(test$productivity_score, rf_pred)^2
+
+rf_results <- data.frame(
+  Model = "Random Forest, mtry = 3",
+  Test_MSE = rf_mse,
+  Test_RMSE = rf_rmse,
+  Test_R2 = rf_r2
+)
+
+rf_results
+```
+
+## 4.4 Tune mtry for random forest
+
+```{r}
+set.seed(43)
+
+mtry_values <- 2:10
+mtry_results <- data.frame(
+  mtry = mtry_values,
+  OOB_RMSE = NA
+)
+
+for (i in seq_along(mtry_values)) {
+  temp_rf <- randomForest(
+    model_formula,
+    data = train,
+    mtry = mtry_values[i],
+    ntree = 300,
+    importance = TRUE
+  )
+  mtry_results$OOB_RMSE[i] <- sqrt(tail(temp_rf$mse, 1))
+}
+
+mtry_results
+best_mtry <- mtry_results$mtry[which.min(mtry_results$OOB_RMSE)]
+best_mtry
+```
+
+```{r, fig.width=8, fig.height=5}
+mtry_plot <- ggplot(mtry_results, aes(x = mtry, y = OOB_RMSE)) +
+  geom_line() +
+  geom_point(size = 2) +
+  labs(
+    title = "Random Forest Tuning",
+    subtitle = "Choosing mtry using out-of-bag RMSE",
+    x = "mtry: number of predictors randomly considered at each split",
+    y = "OOB RMSE"
+  ) +
+  theme_minimal(base_size = 13)
+
+mtry_plot
+
+ggsave(
+  filename = "poster_outputs/random_forest_mtry_tuning.png",
+  plot = mtry_plot,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+```
+
+## 4.5 Final tuned random forest
+
+```{r}
+set.seed(43)
+rf_final <- randomForest(
+  model_formula,
+  data = train,
+  mtry = best_mtry,
+  ntree = 500,
+  importance = TRUE
+)
+
+rf_final
+```
+
+```{r}
+rf_final_pred <- predict(rf_final, newdata = test)
+
+rf_final_mse <- mean((test$productivity_score - rf_final_pred)^2)
+rf_final_rmse <- sqrt(rf_final_mse)
+rf_final_r2 <- cor(test$productivity_score, rf_final_pred)^2
+
+rf_final_results <- data.frame(
+  Model = paste0("Tuned Random Forest, mtry = ", best_mtry),
+  Test_MSE = rf_final_mse,
+  Test_RMSE = rf_final_rmse,
+  Test_R2 = rf_final_r2
+)
+
+rf_final_results
+```
+
+## 4.6 Model comparison for poster
+
+```{r}
+model_comparison <- bind_rows(
+  tree_results,
+  rf_results,
+  rf_final_results
+)
+
+model_comparison
+
+write.csv(model_comparison, "poster_outputs/model_comparison.csv", row.names = FALSE)
+```
+
+```{r, fig.width=8, fig.height=5}
+model_plot <- ggplot(model_comparison, aes(x = reorder(Model, Test_RMSE), y = Test_RMSE)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Tree-based Model Comparison",
+    subtitle = "Lower test RMSE indicates better prediction accuracy",
+    x = "Model",
+    y = "Test RMSE"
+  ) +
+  theme_minimal(base_size = 13)
+
+model_plot
+
+ggsave(
+  filename = "poster_outputs/tree_model_comparison_rmse.png",
+  plot = model_plot,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+```
+
+## 4.7 Actual vs predicted plot
+
+```{r, fig.width=7, fig.height=6}
+actual_pred_df <- data.frame(
+  Actual = test$productivity_score,
+  Predicted = rf_final_pred
+)
+
+actual_pred_plot <- ggplot(actual_pred_df, aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.35) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(
+    title = "Random Forest: Actual vs Predicted Productivity Score",
+    subtitle = "Points closer to the dashed line indicate better predictions",
+    x = "Actual productivity score",
+    y = "Predicted productivity score"
+  ) +
+  theme_minimal(base_size = 13)
+
+actual_pred_plot
+
+ggsave(
+  filename = "poster_outputs/random_forest_actual_vs_predicted.png",
+  plot = actual_pred_plot,
+  width = 7,
+  height = 6,
+  dpi = 300
+)
+```
+
+## 4.8 Random forest variable importance
+
+```{r}
+importance_matrix <- importance(rf_final)
+
+importance_df <- data.frame(
+  Variable = rownames(importance_matrix),
+  IncMSE = importance_matrix[, "%IncMSE"],
+  IncNodePurity = importance_matrix[, "IncNodePurity"],
+  row.names = NULL
+) %>%
+  arrange(desc(IncMSE))
+
+importance_df
+
+write.csv(importance_df, "poster_outputs/random_forest_variable_importance.csv", row.names = FALSE)
+```
+
+```{r, fig.width=9, fig.height=6}
+importance_plot <- importance_df %>%
+  slice_max(order_by = IncMSE, n = 10) %>%
+  ggplot(aes(x = reorder(Variable, IncMSE), y = IncMSE)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top Predictors of Student Productivity",
+    subtitle = "Random forest variable importance based on % increase in MSE",
+    x = "Predictor",
+    y = "% Increase in MSE"
+  ) +
+  theme_minimal(base_size = 13)
+
+importance_plot
+
+ggsave(
+  filename = "poster_outputs/random_forest_variable_importance.png",
+  plot = importance_plot,
+  width = 9,
+  height = 6,
+  dpi = 300
+)
+```
+
+# 5. Cluster analysis
+
+Clustering is unsupervised learning. Here, the goal is not to predict `productivity_score`, but to explore whether students can be grouped into behavioural profiles based on study habits, digital usage, wellbeing, and academic engagement.
+
+For clustering, only numeric behavioural features are used. The target variable `productivity_score`, `final_grade`, and identifier `student_id` are removed.
+
+```{r}
+cluster_data <- data %>%
+  select(
+    age,
+    study_hours_per_day,
+    sleep_hours,
+    phone_usage_hours,
+    social_media_hours,
+    youtube_hours,
+    gaming_hours,
+    breaks_per_day,
+    coffee_intake_mg,
+    exercise_minutes,
+    assignments_completed,
+    attendance_percentage,
+    stress_level,
+    focus_score
+  )
+
+cluster_scaled <- scale(cluster_data)
+
+summary(cluster_data)
+```
+
+## 5.1 PCA for visualising clusters
+
+```{r}
+pca_model <- prcomp(cluster_scaled, center = FALSE, scale. = FALSE)
+
+pca_df <- data.frame(
+  PC1 = pca_model$x[, 1],
+  PC2 = pca_model$x[, 2],
+  productivity_score = data$productivity_score
+)
+
+pca_var <- round(100 * summary(pca_model)$importance[2, 1:2], 1)
+pca_var
+```
+
+```{r, fig.width=7, fig.height=6}
+pca_base_plot <- ggplot(pca_df, aes(x = PC1, y = PC2)) +
+  geom_point(alpha = 0.25) +
+  labs(
+    title = "Students in PCA Space Before Clustering",
+    x = paste0("PC1 (", pca_var[1], "% variance)"),
+    y = paste0("PC2 (", pca_var[2], "% variance)")
+  ) +
+  theme_minimal(base_size = 13)
+
+pca_base_plot
+
+ggsave(
+  filename = "poster_outputs/pca_before_clustering.png",
+  plot = pca_base_plot,
+  width = 7,
+  height = 6,
+  dpi = 300
+)
+```
+
+## 5.2 K-means clustering: choose k using within-cluster criterion
+
+```{r}
+set.seed(43)
+
+k_values <- 2:8
+kmeans_criterion <- data.frame(
+  k = k_values,
+  criterion = NA
+)
+
+for (i in seq_along(k_values)) {
+  km <- kmeans(cluster_scaled, centers = k_values[i], nstart = 20)
+  kmeans_criterion$criterion[i] <- 1 - km$tot.withinss / km$totss
+}
+
+kmeans_criterion
+```
+
+```{r, fig.width=8, fig.height=5}
+kmeans_criterion_plot <- ggplot(kmeans_criterion, aes(x = k, y = criterion)) +
+  geom_line() +
+  geom_point(size = 2) +
+  labs(
+    title = "K-means Criterion vs Number of Clusters",
+    subtitle = "Higher values indicate more between-cluster separation",
+    x = "Number of clusters, k",
+    y = "1 - total within SS / total SS"
+  ) +
+  theme_minimal(base_size = 13)
+
+kmeans_criterion_plot
+
+ggsave(
+  filename = "poster_outputs/kmeans_criterion_vs_k.png",
+  plot = kmeans_criterion_plot,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+```
+
+## 5.3 K-means clustering: choose k using silhouette coefficient
+
+For computational stability, the silhouette coefficient is calculated on a random sample of 2,000 observations.
+
+```{r}
+set.seed(43)
+sil_sample_size <- min(2000, nrow(cluster_scaled))
+sil_index <- sample(1:nrow(cluster_scaled), sil_sample_size)
+cluster_scaled_sample <- cluster_scaled[sil_index, ]
+dist_sample <- dist(cluster_scaled_sample)
+
+silhouette_results <- data.frame(
+  k = k_values,
+  avg_silhouette = NA
+)
+
+for (i in seq_along(k_values)) {
+  km_sample <- kmeans(cluster_scaled_sample, centers = k_values[i], nstart = 20)
+  sil <- silhouette(km_sample$cluster, dist_sample)
+  silhouette_results$avg_silhouette[i] <- summary(sil)$avg.width
+}
+
+silhouette_results
+
+best_k <- silhouette_results$k[which.max(silhouette_results$avg_silhouette)]
+best_k
+```
+
+```{r, fig.width=8, fig.height=5}
+silhouette_plot <- ggplot(silhouette_results, aes(x = k, y = avg_silhouette)) +
+  geom_line() +
+  geom_point(size = 2) +
+  labs(
+    title = "Silhouette Coefficient vs Number of Clusters",
+    subtitle = paste0("Best k based on sampled silhouette = ", best_k),
+    x = "Number of clusters, k",
+    y = "Average silhouette coefficient"
+  ) +
+  theme_minimal(base_size = 13)
+
+silhouette_plot
+
+ggsave(
+  filename = "poster_outputs/silhouette_vs_k.png",
+  plot = silhouette_plot,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+```
+
+## 5.4 Final k-means model
+
+```{r}
+set.seed(43)
+kmeans_final <- kmeans(cluster_scaled, centers = best_k, nstart = 20)
+
+data_clustered <- data %>%
+  mutate(cluster = factor(kmeans_final$cluster))
+
+pca_cluster_df <- pca_df %>%
+  mutate(cluster = factor(kmeans_final$cluster))
+
+kmeans_final$size
+kmeans_final$tot.withinss
+```
+
+```{r, fig.width=7, fig.height=6}
+kmeans_pca_plot <- ggplot(pca_cluster_df, aes(x = PC1, y = PC2, color = cluster)) +
+  geom_point(alpha = 0.35) +
+  labs(
+    title = "K-means Student Behaviour Clusters",
+    subtitle = paste0("Visualised using PCA; k = ", best_k),
+    x = paste0("PC1 (", pca_var[1], "% variance)"),
+    y = paste0("PC2 (", pca_var[2], "% variance)"),
+    color = "Cluster"
+  ) +
+  theme_minimal(base_size = 13)
+
+kmeans_pca_plot
+
+ggsave(
+  filename = "poster_outputs/kmeans_clusters_pca.png",
+  plot = kmeans_pca_plot,
+  width = 7,
+  height = 6,
+  dpi = 300
+)
+```
+
+## 5.5 Cluster profiles
+
+```{r}
+cluster_profiles <- data_clustered %>%
+  group_by(cluster) %>%
+  summarise(
+    n = n(),
+    avg_productivity = mean(productivity_score),
+    avg_study_hours = mean(study_hours_per_day),
+    avg_sleep_hours = mean(sleep_hours),
+    avg_phone_usage = mean(phone_usage_hours),
+    avg_social_media = mean(social_media_hours),
+    avg_youtube = mean(youtube_hours),
+    avg_gaming = mean(gaming_hours),
+    avg_breaks = mean(breaks_per_day),
+    avg_coffee = mean(coffee_intake_mg),
+    avg_exercise = mean(exercise_minutes),
+    avg_assignments = mean(assignments_completed),
+    avg_attendance = mean(attendance_percentage),
+    avg_stress = mean(stress_level),
+    avg_focus = mean(focus_score),
+    .groups = "drop"
+  )
+
+cluster_profiles
+
+write.csv(cluster_profiles, "poster_outputs/cluster_profiles.csv", row.names = FALSE)
+```
+
+```{r, fig.width=8, fig.height=5}
+cluster_productivity_plot <- ggplot(data_clustered, aes(x = cluster, y = productivity_score)) +
+  geom_boxplot() +
+  labs(
+    title = "Productivity Score by Behaviour Cluster",
+    subtitle = "This compares productivity distributions across unsupervised clusters",
+    x = "Cluster",
+    y = "Productivity score"
+  ) +
+  theme_minimal(base_size = 13)
+
+cluster_productivity_plot
+
+ggsave(
+  filename = "poster_outputs/productivity_by_cluster.png",
+  plot = cluster_productivity_plot,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+```
+
+```{r, fig.width=9, fig.height=6}
+cluster_profile_long <- cluster_profiles %>%
+  select(
+    cluster,
+    avg_study_hours,
+    avg_sleep_hours,
+    avg_phone_usage,
+    avg_social_media,
+    avg_gaming,
+    avg_exercise,
+    avg_attendance,
+    avg_stress,
+    avg_focus,
+    avg_productivity
+  ) %>%
+  pivot_longer(
+    cols = -cluster,
+    names_to = "Feature",
+    values_to = "Value"
+  )
+
+cluster_profile_plot <- ggplot(cluster_profile_long, aes(x = Feature, y = Value, fill = cluster)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  labs(
+    title = "Cluster Profiles",
+    subtitle = "Average feature values in each student behaviour cluster",
+    x = "Feature",
+    y = "Average value",
+    fill = "Cluster"
+  ) +
+  theme_minimal(base_size = 12)
+
+cluster_profile_plot
+
+ggsave(
+  filename = "poster_outputs/cluster_profiles.png",
+  plot = cluster_profile_plot,
+  width = 9,
+  height = 6,
+  dpi = 300
+)
+```
+
+# 6. Hierarchical clustering on a sample
+
+Hierarchical clustering requires a distance matrix, which can become very large for 20,000 observations. Therefore, this section uses a random sample for visualisation.
+
+```{r}
+set.seed(43)
+hc_sample_size <- min(500, nrow(cluster_scaled))
+hc_index <- sample(1:nrow(cluster_scaled), hc_sample_size)
+hc_data <- cluster_scaled[hc_index, ]
+hc_dist <- dist(hc_data)
+
+hc_complete <- hclust(hc_dist, method = "complete")
+```
+
+```{r, fig.width=10, fig.height=6}
+plot(hc_complete, main = "Hierarchical Clustering: Complete Linkage", xlab = "", sub = "", cex = 0.4)
+rect.hclust(hc_complete, k = best_k, border = "red")
+```
+
+```{r}
+png("poster_outputs/hierarchical_clustering_dendrogram.png", width = 1600, height = 1000, res = 150)
+plot(hc_complete, main = "Hierarchical Clustering: Complete Linkage", xlab = "", sub = "", cex = 0.4)
+rect.hclust(hc_complete, k = best_k, border = "red")
+dev.off()
+```
+
+# 7. Short poster-ready summaries
+
+```{r}
+cat("Tree-based model summary:\n")
+cat("The tuned random forest achieved a test RMSE of", round(rf_final_rmse, 3),
+    "and test R-squared of", round(rf_final_r2, 3), ".\n")
+cat("The most important predictor was", importance_df$Variable[1], ".\n\n")
+
+cat("Cluster analysis summary:\n")
+cat("K-means clustering was used to identify student behaviour profiles.\n")
+cat("The silhouette analysis selected k =", best_k, "clusters.\n")
+cat("Cluster profiles were compared using average productivity, study hours, sleep, phone use, stress, and focus.\n")
+```
